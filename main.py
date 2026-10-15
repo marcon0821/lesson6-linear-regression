@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("🌡️ 서울 연평균 기온 분석 및 예측기")
-st.markdown("서울 기온 데이터를 활용하여 연도별 평균 기온 추세를 분석하고, 원하는 연도의 기온을 예측해보세요.")
+st.markdown("서울 기온 데이터를 활용하여 연도별 평균 기온 추세를 분석하고, 전체 기간과 최근 20년의 기온 상승 속도를 비교해보세요.")
 
 # 데이터 로드 함수
 @st.cache_data
@@ -54,30 +54,64 @@ st.info(f"📊 **분석 데이터 요약**\n"
         f"- **시작 연도:** {start_year}년\n"
         f"- **끝 연도:** {end_year}년 (기준: 2025년까지, 관측일 300일 이상)")
 
-# 회귀 분석 및 상관계수 계산
-x = annual_valid['연도'].values
-y = annual_valid['평균기온'].values
+# 전체 기간 회귀 분석
+x_all = annual_valid['연도'].values
+y_all = annual_valid['평균기온'].values
 
-corr_coef = np.corrcoef(x, y)[0, 1]
-slope, intercept = np.polyfit(x, y, 1)
+corr_coef = np.corrcoef(x_all, y_all)[0, 1]
+slope_all, intercept_all = np.polyfit(x_all, y_all, 1)
+per_century_all = slope_all * 100  # 100년당 기온 상승 폭
 
-# 회귀선 예측값 생성
-annual_valid['회귀예측기온'] = slope * annual_valid['연도'] + intercept
+# 전체 기간 회귀예측기온 생성
+annual_valid['회귀예측기온'] = slope_all * annual_valid['연도'] + intercept_all
 
+# 최근 20년 기간 회귀 분석 (데이터 끝 연도 기준 최근 20개 연도)
+recent_years_df = annual_valid[annual_valid['연도'] >= (end_year - 19)].copy()
+x_rec = recent_years_df['연도'].values
+y_rec = recent_years_df['평균기온'].values
+slope_rec, intercept_rec = np.polyfit(x_rec, y_rec, 1)
+per_century_rec = slope_rec * 100  # 최근 20년 기준 100년당 기온 상승 폭
+
+st.markdown("---")
+st.subheader("📈 기온 상승 속도 비교 (100년당 상승 기온)")
+
+# 나란히 비교하여 크게 보여주기
 col1, col2 = st.columns(2)
 with col1:
-    st.metric(label="연도와 평균기온 상관계수 (r)", value=f"{corr_coef:.4f}")
+    st.markdown(
+        f"""
+        <div style="padding: 15px; border-radius: 10px; background-color: #f0f2f6; text-align: center;">
+            <p style="margin: 0; font-size: 0.9rem; color: #555;">전체 기간 ({start_year}~{end_year}년)</p>
+            <h2 style="margin: 5px 0 0 0; color: #1f77b4; font-size: 2.2rem;">+{per_century_all:.2f} °C</h2>
+            <p style="margin: 5px 0 0 0; font-size: 0.8rem; color: #777;">(1년당 +{slope_all:.4f} °C)</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 with col2:
-    st.metric(label="회귀식 기울기", value=f"{slope:.4f} °C/년")
+    st.markdown(
+        f"""
+        <div style="padding: 15px; border-radius: 10px; background-color: #fff1f0; text-align: center;">
+            <p style="margin: 0; font-size: 0.9rem; color: #555;">최근 20년 ({int(recent_years_df['연도'].min())}~{end_year}년)</p>
+            <h2 style="margin: 5px 0 0 0; color: #ff4b4b; font-size: 2.2rem;">+{per_century_rec:.2f} °C</h2>
+            <p style="margin: 5px 0 0 0; font-size: 0.8rem; color: #777;">(1년당 +{slope_rec:.4f} °C)</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+st.write("")
+st.markdown(f"**전체 기간 상관계수 (r):** {corr_coef:.4f}")
 
 st.markdown("---")
 
-# Plotly 그래프 생성 (산점도 + 회귀 직선)
+# Plotly 그래프 생성 (산점도 + 전체 회귀 직선)
 fig = px.scatter(
     annual_valid, 
     x='연도', 
     y='평균기온', 
-    title="서울 연도별 평균기온 및 회귀 직선",
+    title="서울 연도별 평균기온 및 전체 회귀 직선",
     labels={'연도': '연도', '평균기온': '평균기온 (°C)'},
     template='plotly_white'
 )
@@ -87,7 +121,7 @@ fig.add_trace(
         x=annual_valid['연도'],
         y=annual_valid['회귀예측기온'],
         mode='lines',
-        name=f'회귀선 (y = {slope:.2f}x + {intercept:.2f})',
+        name=f'전체 회귀선 (100년당 +{per_century_all:.2f}°C)',
         line=dict(color='red', width=2)
     )
 )
@@ -106,12 +140,12 @@ st.markdown("---")
 st.subheader("🔮 특정 연도 기온 예측하기")
 selected_year = st.slider("예측할 연도를 선택하세요", min_value=1900, max_value=2100, value=2026, step=1)
 
-predicted_temp = slope * selected_year + intercept
+predicted_temp = slope_all * selected_year + intercept_all
 
 st.markdown(
     f"""
     <div style="padding: 20px; border-radius: 10px; background-color: #f0f2f6; text-align: center;">
-        <h3 style="margin: 0; color: #31333F;">{selected_year}년 예상 서울 평균기온</h3>
+        <h3 style="margin: 0; color: #31333F;">{selected_year}년 예상 서울 평균기온 (전체 회귀식 기준)</h3>
         <h1 style="margin: 10px 0 0 0; color: #ff4b4b; font-size: 3rem;">{predicted_temp:.2f} °C</h1>
     </div>
     """,
